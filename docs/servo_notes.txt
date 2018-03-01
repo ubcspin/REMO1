@@ -1,0 +1,11 @@
+0.22 sec / 60 deg
+
+60 deg per 0.22 seconds
+
+Question --> how many degrees per second?
+
+(60/0.22 = 272.727273) degrees per second
+
+0.273 degrees per millisecond 
+
+
