@@ -90,7 +90,7 @@ String getCondition() {
   List<String> list = new ArrayList<String>();
   list.add("1");
   list.add("2");
-  list.add("3");
+  //list.add("3");
   Random randomizer = new Random();
   String random = list.get(randomizer.nextInt(list.size()));
   return random;

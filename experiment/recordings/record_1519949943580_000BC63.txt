@@ -1,0 +1,8 @@
+Robot Emotion Regulation Study Early 2018
+Zak Witkower, Laura Cang, Paul Bucci
+zakwitkower@gmail.com, cang@cs.ubc.ca, pbucci@cs.ubc.ca
+Participant ID: 000BC6
+Condition ID: 3
+-------------------------------------------------------------
+
+unix_timestamp,heart_rate_voltage,accelerometer_x,accelerometer_y,accelerometer_z,servo_position,arduino_timestamp
