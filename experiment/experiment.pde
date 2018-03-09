@@ -37,6 +37,9 @@ int h = 25; // height of plots
 String participantID;
 String conditionID;
 
+int videoWidth = 640;
+int videoHeight = 360;
+
 void setup() {
   // I know that the first port in the serial list on my mac
   // is Serial.list()[0].
@@ -44,6 +47,7 @@ void setup() {
   // Open whatever port is the one you're using.
   
   frameRate(fps);
+  
 
   for (int i = 0; i < Serial.list().length; i++) {
     println(i + " : " + Serial.list()[i]);
@@ -54,10 +58,13 @@ void setup() {
   
   ////////////////////////////////////////////////////////
   // Video
-  size(640, 360); // needs to be changed to the right size
+  
+  //size(videoWidth, videoHeight); // needs to be changed to the right size
   background(255, 204, 0);
+  
   video = new Movie(this, "video.mp4"); // in data folder
-
+  fullScreen();
+  
   ////////////////////////////////////////////////////////
   // File output
   participantID = getPtpt();
@@ -72,8 +79,8 @@ void setup() {
   output.println("Participant ID: " + participantID);
   output.println("Condition ID: " + conditionID);
   output.println("-------------------------------------------------------------\n");
-  // example data: 1519702417037,517,10.47,-0.71,0.63,57,5462284
-  output.println("unix_timestamp,heart_rate_voltage,accelerometer_x,accelerometer_y,accelerometer_z,servo_position,arduino_timestamp");
+  // example data: 1519702417037,517,10.47,-0.71,0.63,57,5462284,note1
+  output.println("unix_timestamp,heart_rate_voltage,accelerometer_x,accelerometer_y,accelerometer_z,servo_position,arduino_timestamp,note");
   output.flush();
   
   ////////////////////////////////////////////////////////
@@ -120,7 +127,8 @@ void draw() {
 void handleVideo() {
   //// Video loop
   if (videoPlaying) {
-    image(video, 0, 0);
+    background(0);
+    image(video, (0.5) * (width - videoWidth), 0.5 * (height - videoHeight));
     // check if video is done
     if (video.time() == video.duration()) {
       stopExperiment();
@@ -131,7 +139,6 @@ void handleVideo() {
 }
 
 void drawText() {
-  background(255, 204, 0);
   fill(0);
   text("x-acc", 10, ydist(1) - spacer);
   text("y-acc", 10, ydist(2) - spacer);
@@ -150,9 +157,10 @@ void stop() {
 
 void drawData() {
   // line(x1,y1,x2,y2)
+  drawText();
   if (frameCount % width == 1) {
+    background(255, 204, 0);
     recalculateReferences();
-    drawText();
   }
   
   int xend = frameCount % width;
@@ -186,46 +194,103 @@ void keyPressed() {
   }
 }
 
+//// Servo helper functions
+//int updatePosition() {
+//  // sine wave stub
+//  float t = millis() * 0.001;
+//  float fmin = 0.125; // default neutral
+//  float fout = f;
+//  float fmax = 0;
+//  int easeIn = 20; // seconds to ease in
+//  int easeOut = 20; // seconds to ease in
+  
+//  float timeIn  = (2 * 60) + 14; // timecode 2:14
+//  float timeOut = (3 * 60) + 40; // timecode 3:40
+  
+//  float ratioIn = easeIn / (fmax - fmin); 
+  
+  
+//  if (conditionID == "1") {
+//    // fast
+//    fmax = 2.0; 
+//  } else if (conditionID == "2") {
+//    // regular
+//    fmax = 0.125;
+//  } else if (conditionID == "3") {
+//    // dead
+//    return 0;
+//  }
+  
+//  if (videoPlaying) {
+//    float now = video.time();
+//    if (now > timeIn && now < timeIn + easeIn) {
+//      //fout = lerp(f, fmax, (video.time() - timeIn) / easeIn); 
+//      float dist = now - timeIn;
+//      int pos = tf(dist * dist * ratioIn * 0.5); // triangle for integral
+//      return pos;
+//    } else if (now > timeOut && now < timeOut + easeOut) {
+//      //fout = lerp(f, fmax, (video.time() - timeOut) / easeOut);
+//    }
+//  } else {
+//    //fout = f; // redundant
+//    //int pos = floor((sin(2*PI*fout*t) + 1) * 0.5 * 180); // vary between 0-180 degrees
+//    int pos = tf(fout * t);
+//    return pos;
+//  }   
+//}
+
+//int tf(float f) {
+//  return floor(abs(sin(2 * PI * f) * 0.5 * 180));
+//}
+
+//int intpos(int t, int t0, int tf, float s, float e) {
+  
+//  return 0; // stub
+//}
+
+
 // Servo helper functions
-int updatePosition() {
-  // sine wave stub
-  float t = millis() * 0.001;
-  float f = 0.125; // default neutral
-  float fout = f;
-  float fmax = 0;
-  int easeIn = 20; // seconds to ease in
-  int easeOut = 20; // seconds to ease in
+int updatePosition() { 
+  int easeIn  = 5; // seconds to ease in
+  int easeOut = 5; // seconds to ease out
   
-  float timeIn  = (2 * 60) + 14; // timecode 2:14
-  float timeOut = (3 * 60) + 40; // timecode 3:40
+  ////float timeIn  = (2 * 60) + 14; // timecode 2:14
+  ////float timeOut = (3 * 60) + 40; // timecode 3:40
+  float timeIn = 5;
+  float timeOut = timeIn + easeIn + 5;
   
-  if (conditionID == "1") {
-    // fast
-    fmax = 2.0; 
-  } else if (conditionID == "2") {
-    // regular
-    fmax = 0.125;
-  } else if (conditionID == "3") {
-    // dead
-    return 0;
-  }
+  float fmax = 10;
+  float fmin = 0.5;
+  float time = millis() * 0.001; // time now
   
+  float ratioIn  = easeIn  / (fmax - fmin); // needed for similar triangles
+  float ratioOut = easeOut / (fmax - fmin); // needed for similar triangles
+  
+  int pos = 0;
   if (videoPlaying) {
     if (video.time() > timeIn && video.time() < timeIn + easeIn) {
-      fout = lerp(f, fmax, (video.time() - timeIn) / easeIn);
+      float dist = video.time() - timeIn; 
+      pos = tf(dist * dist * ratioIn * 0.5); // triangle for integral
+    } else if (video.time() > timeIn + easeIn && video.time() < timeOut) {
+      pos = tf(fmax * time);
     } else if (video.time() > timeOut && video.time() < timeOut + easeOut) {
-      fout = lerp(f, fmax, (video.time() - timeOut) / easeOut);
+      float dist = (timeOut + easeOut) - video.time();
+      float atriangle = easeOut * fmax * 0.5;
+      float areaLeft = atriangle - (dist * dist * ratioOut * 0.5); 
+      pos = tf(areaLeft);
+    } else {
+      pos = tf(fmin * time);
     }
   } else {
-    fout = f; // redundant 
+    pos = tf(fmin * time);
   }
-  
-  int pos = floor((sin(2*PI*fout*t) + 1) * 0.5 * 180); // vary between 0-180 degrees
-
-  return pos; 
+  p = pos;
+  return pos;
 }
 
-
+int tf(float f) {
+  return floor(abs(sin(2 * PI * f) * 0.5 * 180));
+}
 
 
 void recalculateReferences() {
@@ -304,13 +369,13 @@ void serialEvent(Serial myPort) {
 void startExperiment() {
   videoPlaying = true;
   video.play();
-  recordData("start experiment");
+  recordData("null,null,null,null,null,null,start experiment");
 }
 
 void stopExperiment() {
   videoPlaying = false;
   video.stop();
-  recordData("end experiment");
+  recordData("null,null,null,null,null,null,end experiment");
   background(255, 204, 0);
 }
 
