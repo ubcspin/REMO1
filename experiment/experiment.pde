@@ -168,10 +168,14 @@ void handleVideo() {
     background(255, 204, 0);
   }
   else if (videoPlaying) {
-    drawData();
-    //background(0);
-    //image(video, (0.5) * (width - videoWidth), 0.5 * (height - videoHeight)); // comment out to hide video screen
-    // check if video is done
+    if (debugging) {
+      drawData();
+      return;
+    }
+    
+    background(0);
+    image(video, (0.5) * (width - videoWidth), 0.5 * (height - videoHeight)); // comment out to hide video screen
+     //check if video is done
     if (video.time() == video.duration()) {
       stopExperiment();
     }
@@ -263,10 +267,17 @@ int updatePosition() {
   //p = pos;
   //return pos;
   
+  if (conditionID == "2") {
+    return 0;
+  }
+  
   int i = frameCount % 480;
-  if (videoPlaying && video.time() <= video.duration()) {
-     i = frameCount - frameZero;
-   }
+  if (conditionID == "1" && videoPlaying && video.time() <= video.duration()) {
+     int k = frameCount - frameZero;
+     if (k < recordedBehaviour.size()) {
+       i = k;
+     }
+  }
   int pos = (int) recordedBehaviour.get(i);
   p = pos;
   return pos; 
@@ -332,7 +343,7 @@ void generateBehaviour() {
     //3.24.02
     //3.48.03
     
-    int pauseLength = 24 * fps; // number of frames between end of easeIn and video end
+    int pauseLength = 34 * fps; // number of frames between end of easeIn and video end
     int pauseNumBins = pauseLength / minNumBins;
   
     for (int j = 0; j < pauseNumBins; j++) {

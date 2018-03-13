@@ -1,4 +1,5 @@
 *DS_Store
+*/?recordings/*.csv
 */?recordings/*.txt
 .ssh/*
 docs/video/Adobe Premiere Pro Auto-Save/
