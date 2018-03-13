@@ -1,6 +1,11 @@
 import processing.serial.*;
 import processing.video.*;
 import java.util.*;
+// debugging
+boolean debugging = true;
+
+boolean connected = false;
+boolean firstConnect = false;
 
 // Create object from Serial class
 Serial myPort;  
@@ -37,10 +42,31 @@ int h = 25; // height of plots
 String participantID;
 String conditionID;
 
-int videoWidth = 640;
-int videoHeight = 360;
+final int videoWidth = 640;
+final int videoHeight = 360;
+
+
+ArrayList recordedBehaviour;
+int frameZero = 0;
+
+int easeIn = 20;   // length of ease in
+int easeOut = 10;   // length of ease out
+
+int timeIn = 5; // time when we start the ease
+int timeOut = timeIn + easeIn + 5; // time when we start the ease
+
+int maxNumBins = fps * (4);
+int minNumBins = fps * (1);
+
+int diffBins = maxNumBins - minNumBins; // 360
+int sizeOfStepIn  = diffBins / easeIn;  // 18
+int sizeOfStepOut = diffBins / easeOut; // 36
 
 void setup() {
+  
+  recordedBehaviour = new ArrayList();
+  generateBehaviour();
+  
   // I know that the first port in the serial list on my mac
   // is Serial.list()[0].
   // On Windows machines, this generally opens COM1.
@@ -59,18 +85,22 @@ void setup() {
   ////////////////////////////////////////////////////////
   // Video
   
-  //size(videoWidth, videoHeight); // needs to be changed to the right size
+  
   background(255, 204, 0);
   
   video = new Movie(this, "video.mp4"); // in data folder
-  fullScreen();
+  //if (debugging) {
+    size(640, 360); // from finals above
+  //} else {
+    //fullScreen();
+  //}
   
   ////////////////////////////////////////////////////////
   // File output
   participantID = getPtpt();
   conditionID = getCondition();
   
-  output = createWriter("recordings/record_" + getTimestamp() + "_" + participantID + conditionID + ".txt");
+  output = createWriter("recordings/record_" + getTimestamp() + "_" + participantID + conditionID + ".csv");
   
   output.println("Robot Emotion Regulation Study Early 2018");
   output.println("Zak Witkower, Laura Cang, Paul Bucci");
@@ -95,9 +125,13 @@ void setup() {
 
 String getCondition() {
   List<String> list = new ArrayList<String>();
-  list.add("1");
-  list.add("2");
-  //list.add("3");
+  if (debugging) {
+    list.add("1");
+  } else {
+    list.add("1");
+    list.add("2");
+    list.add("3");
+  }
   Random randomizer = new Random();
   String random = list.get(randomizer.nextInt(list.size()));
   return random;
@@ -126,9 +160,17 @@ void draw() {
 
 void handleVideo() {
   //// Video loop
-  if (videoPlaying) {
-    background(0);
-    image(video, (0.5) * (width - videoWidth), 0.5 * (height - videoHeight));
+  if (!connected) {
+    fill(0);
+    text("connecting to arduino...", width / 2, height / 2);
+  } else if (firstConnect) {
+    firstConnect = false;
+    background(255, 204, 0);
+  }
+  else if (videoPlaying) {
+    drawData();
+    //background(0);
+    //image(video, (0.5) * (width - videoWidth), 0.5 * (height - videoHeight)); // comment out to hide video screen
     // check if video is done
     if (video.time() == video.duration()) {
       stopExperiment();
@@ -146,13 +188,18 @@ void drawText() {
   text("servo position", 10, ydist(4) - spacer);
   text("HR voltage", 10, ydist(5) - spacer);
   text("Press ENTER or RETURN to start experiment.", width - 230, 10);
-  text("Particiapnt ID : " + participantID + conditionID, width - 230, 25);
-  
+  text("Particiapnt ID : " + participantID + conditionID, width - 230, 25); 
 }
 
-void stop() {
+void exit() {
+  println("Stopping program.");
+  myPort.clear();
+  myPort.stop();
+  
   output.flush();
   output.close();
+  
+  super.exit();
 } 
 
 void drawData() {
@@ -194,109 +241,175 @@ void keyPressed() {
   }
 }
 
-//// Servo helper functions
-//int updatePosition() {
-//  // sine wave stub
-//  float t = millis() * 0.001;
-//  float fmin = 0.125; // default neutral
-//  float fout = f;
-//  float fmax = 0;
-//  int easeIn = 20; // seconds to ease in
-//  int easeOut = 20; // seconds to ease in
-  
-//  float timeIn  = (2 * 60) + 14; // timecode 2:14
-//  float timeOut = (3 * 60) + 40; // timecode 3:40
-  
-//  float ratioIn = easeIn / (fmax - fmin); 
-  
-  
-//  if (conditionID == "1") {
-//    // fast
-//    fmax = 2.0; 
-//  } else if (conditionID == "2") {
-//    // regular
-//    fmax = 0.125;
-//  } else if (conditionID == "3") {
-//    // dead
-//    return 0;
-//  }
-  
-//  if (videoPlaying) {
-//    float now = video.time();
-//    if (now > timeIn && now < timeIn + easeIn) {
-//      //fout = lerp(f, fmax, (video.time() - timeIn) / easeIn); 
-//      float dist = now - timeIn;
-//      int pos = tf(dist * dist * ratioIn * 0.5); // triangle for integral
-//      return pos;
-//    } else if (now > timeOut && now < timeOut + easeOut) {
-//      //fout = lerp(f, fmax, (video.time() - timeOut) / easeOut);
-//    }
-//  } else {
-//    //fout = f; // redundant
-//    //int pos = floor((sin(2*PI*fout*t) + 1) * 0.5 * 180); // vary between 0-180 degrees
-//    int pos = tf(fout * t);
-//    return pos;
-//  }   
-//}
 
-//int tf(float f) {
-//  return floor(abs(sin(2 * PI * f) * 0.5 * 180));
-//}
-
-//int intpos(int t, int t0, int tf, float s, float e) {
+int updatePosition() {
+  //int i = frameCount % (fps * 4);
+  //if (conditionID == "3") { // dead condition
+  //  return 0;
+  //} else if (conditionID == "1") { // faster condition
+  //   if (videoPlaying && video.time() > (60 * 2) + (24 * 1)) {
+  //     if (frameZero == 0) { // frameZero is the frame count into the program that the video start at
+  //       println("Started accelerated breathing.");
+  //       frameZero = frameCount;
+  //       recordData("start bad video");
+  //     } else {
+  //       i = frameCount - frameZero;
+  //     }
+  //  }
+  //}// else just return the normal for condition "2"
+  ////int i = frameCount;
+  //int pos = (int) recordedBehaviour.get(i);
+  ////println("i: " + i + "\t\t pos: " + pos); 
+  //p = pos;
+  //return pos;
   
-//  return 0; // stub
-//}
-
-
-// Servo helper functions
-int updatePosition() { 
-  int easeIn  = 5; // seconds to ease in
-  int easeOut = 5; // seconds to ease out
-  
-  ////float timeIn  = (2 * 60) + 14; // timecode 2:14
-  ////float timeOut = (3 * 60) + 40; // timecode 3:40
-  float timeIn = 5;
-  float timeOut = timeIn + easeIn + 5;
-  
-  float fmax = 10;
-  float fmin = 0.5;
-  float time = millis() * 0.001; // time now
-  
-  float ratioIn  = easeIn  / (fmax - fmin); // needed for similar triangles
-  float ratioOut = easeOut / (fmax - fmin); // needed for similar triangles
-  
-  int pos = 0;
-  if (videoPlaying) {
-    if (video.time() > timeIn && video.time() < timeIn + easeIn) {
-      float dist = video.time() - timeIn; 
-      pos = tf(dist * dist * ratioIn * 0.5); // triangle for integral
-    } else if (video.time() > timeIn + easeIn && video.time() < timeOut) {
-      pos = tf(fmax * time);
-    } else if (video.time() > timeOut && video.time() < timeOut + easeOut) {
-      float dist = (timeOut + easeOut) - video.time();
-      float atriangle = easeOut * fmax * 0.5;
-      float areaLeft = atriangle - (dist * dist * ratioOut * 0.5); 
-      pos = tf(areaLeft);
-    } else {
-      pos = tf(fmin * time);
-    }
-  } else {
-    pos = tf(fmin * time);
-  }
+  int i = frameCount % 480;
+  if (videoPlaying && video.time() <= video.duration()) {
+     i = frameCount - frameZero;
+   }
+  int pos = (int) recordedBehaviour.get(i);
   p = pos;
-  return pos;
+  return pos; 
+  
 }
 
-int tf(float f) {
-  return floor(abs(sin(2 * PI * f) * 0.5 * 180));
-}
 
+void generateBehaviour() {
+  
+    int startDelay = (fps * 60 * 2) + (24 * fps); // number of frames between end of easeIn and video end
+    int delayNumBins = startDelay / maxNumBins;
+  
+    for (int j = 0; j < delayNumBins; j++) {
+      int[] bins = new int[maxNumBins];
+      bins[0] = 0;
+      float currentPos = 0;
+        
+      float slope = 180f / ((float) bins.length / 2);
+      printD("slope: " + slope + " bins.length: " + bins.length);
+      for (int i = 1; i < bins.length / 2; i++) {
+        currentPos = currentPos + slope;
+        bins[i] = (int) currentPos;
+      }
+      
+      for (int i = bins.length / 2; i < bins.length; i++) {
+        currentPos = currentPos - slope;
+        bins[i] = (int) currentPos;
+      }
+      bins[bins.length - 1] = 0;
+      
+      for (int i = 0; i < bins.length; i++) {
+        recordedBehaviour.add(bins[i]);
+      }
+    }
+  
+    for (int k = maxNumBins; k > minNumBins; k = k - sizeOfStepIn) {
+  
+        int[] bins = new int[k];
+        bins[0] = 0;
+        
+        float currentPos = 0;
+        
+        float slope = 180f / ((float) bins.length / 2);
+        printD("slope: " + slope + " bins.length: " + bins.length);
+        
+        for (int i = 1; i < bins.length / 2; i++) {
+          currentPos = currentPos + slope;
+          bins[i] = (int) currentPos;
+        }
+        for (int i = bins.length / 2; i < bins.length; i++) {
+          currentPos = currentPos - slope;
+          bins[i] = (int) currentPos;
+        }
+        
+        bins[bins.length - 1] = 0; 
+        
+        for (int i = 0; i < bins.length; i++) {
+          recordedBehaviour.add(bins[i]);
+        }
+    }
+    
+    // Pause from:
+    //3.24.02
+    //3.48.03
+    
+    int pauseLength = 24 * fps; // number of frames between end of easeIn and video end
+    int pauseNumBins = pauseLength / minNumBins;
+  
+    for (int j = 0; j < pauseNumBins; j++) {
+      int[] bins = new int[minNumBins];
+      bins[0] = 0;
+      float currentPos = 0;
+        
+      float slope = 180f / ((float) bins.length / 2);
+      printD("slope: " + slope + " bins.length: " + bins.length);
+      for (int i = 1; i < bins.length / 2; i++) {
+        currentPos = currentPos + slope;
+        bins[i] = (int) currentPos;
+      }
+      
+      for (int i = bins.length / 2; i < bins.length; i++) {
+        currentPos = currentPos - slope;
+        bins[i] = (int) currentPos;
+      }
+      bins[bins.length - 1] = 0;
+      
+      for (int i = 0; i < bins.length; i++) {
+        recordedBehaviour.add(bins[i]);
+      }
+    }
+    
+     for (int k = minNumBins; k <= maxNumBins; k = k + sizeOfStepOut) {
+        
+        int[] bins = new int[k];
+        bins[0] = 0;
+        
+        float currentPos = 0;
+        
+        float slope = 180f / ((float) bins.length / 2);
+        printD("slope: " + slope + " bins.length: " + bins.length);
+        
+        for (int i = 1; i < bins.length / 2; i++) {
+          currentPos = currentPos + slope;
+          bins[i] = (int) currentPos;
+        }
+        for (int i = bins.length / 2; i < bins.length; i++) {
+          currentPos = currentPos - slope;
+          bins[i] = (int) currentPos;
+        }
+        
+        bins[bins.length - 1] = 0; 
+        
+        for (int i = 0; i < bins.length; i++) {
+          recordedBehaviour.add(bins[i]);
+        }
+    }
+    
+    
+    if (debugging) {
+      PrintWriter testoutput = createWriter("recordings/testoutput" + ".txt");
+      for (int i = 0; i < recordedBehaviour.size(); i++) {
+        testoutput.print(recordedBehaviour.get(i) + ",");
+      }
+      testoutput.println();
+      testoutput.flush();
+      testoutput.close();
+      println("Number of bins: " + recordedBehaviour.size());
+      
+      //24360
+    }
+    
+   
+} // generateBehaviour()
+
+void printD(String msg) {
+  if (debugging) {
+    println(msg);
+  }
+}
 
 void recalculateReferences() {
   float min = 1000;
   float max = 0;
-  
   
   for (int i = hrvals.length / 2; i < hrvals.length - 1; i++) {
     hrvals[i] = (hrvals[i-1] + hrvals[i+1]) / 2;
@@ -320,62 +433,71 @@ void recalculateReferences() {
 
 
 void serialEvent(Serial myPort) {
-  // read the serial buffer:
-  String myString = myPort.readStringUntil('\n');
-  // if you got any bytes other than the linefeed:
-  if (myString != null) {
- 
-    myString = trim(myString);
- 
-    // if you haven't heard from the microncontroller yet, listen:
-    if (firstContact == false) {
-      if (myString.equals("hello")) {
-        myPort.clear();          // clear the serial port buffer
-        firstContact = true;     // you've had first contact from the microcontroller
-        println("First contact established.");
-        myPort.write((int) 0);   // ask for more, zero is arbitrary
+  
+  try {    
+    // read the serial buffer:
+    String myString = myPort.readStringUntil('\n');
+    // if you got any bytes other than the linefeed:
+    if (myString != null) {
+   
+      myString = trim(myString);
+   
+      // if you haven't heard from the microncontroller yet, listen:
+      if (firstContact == false) {
+        if (myString.equals("hello")) {
+          myPort.clear();          // clear the serial port buffer
+          firstContact = true;     // you've had first contact from the microcontroller
+          println("First contact established.");
+          connected = true;
+          firstConnect = true;
+          myPort.write((int) 0);   // ask for more, zero is arbitrary
+        }
       }
+      // if you have heard from the microcontroller, proceed:
+      else {
+        // when you've parsed the data you have, ask for more:
+        String [] list = split(myString, ",");
+        
+        lhr = hr;
+        lp = p;
+        hrvals[frameCount % width] = hr;
+        
+        dx = x - float(list[1]);
+        dy = y - float(list[2]);
+        dz = z - float(list[3]);  
+        
+        hr = float(list[0]);
+        x = float(list[1]);
+        y = float(list[2]);
+        z = float(list[3]);
+        p = float(list[4]);
+        // list[5] is arduino (currently microsecond) timestamp
+        
+        recordData(myString + ",datapoint");
+        //printD(myString + " FPS: " + frameRate);
+        myPort.write((int) position);
+      }
+      
     }
-    // if you have heard from the microcontroller, proceed:
-    else {
-      // when you've parsed the data you have, ask for more:
-      String [] list = split(myString, ",");
-      
-      lhr = hr;
-      lp = p;
-      hrvals[frameCount % width] = hr;
-      
-      dx = x - float(list[1]);
-      dy = y - float(list[2]);
-      dz = z - float(list[3]);  
-      
-      hr = float(list[0]);
-      x = float(list[1]);
-      y = float(list[2]);
-      z = float(list[3]);
-      p = float(list[4]);
-      // list[5] is arduino (currently microsecond) timestamp
-      
-      recordData(myString);
-      println(myString);
-      myPort.write((int) position);
-    }
-    
+  } catch(RuntimeException e) {
+    e.printStackTrace();
+    exit();
   }
 }
-
 
 // Experiment functions
 void startExperiment() {
   videoPlaying = true;
   video.play();
-  recordData("null,null,null,null,null,null,start experiment");
+  frameZero = frameCount;
+  recordData("start experiment");
 }
 
 void stopExperiment() {
   videoPlaying = false;
   video.stop();
-  recordData("null,null,null,null,null,null,end experiment");
+  frameZero = 0;
+  recordData("end experiment");
   background(255, 204, 0);
 }
 
@@ -391,5 +513,14 @@ String getHumanReadableTimestamp() {
 
 void recordData(String msg) {
   //output.println(hr + ", " + ac + ", " + position + ", " + getTimestamp() + "," + video.time() + ", " + msg);
+  int acc = 0;
+  for (int i = 0; i < msg.length(); i++) {
+    if (msg.charAt(i) == ',') {
+      acc++;
+    }
+  }
+  if (acc == 0) {
+    msg = "null,null,null,null,null,null," + msg;
+  }
   output.println(getTimestamp() + "," + msg);
 }
