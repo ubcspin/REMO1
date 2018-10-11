@@ -243,6 +243,10 @@ void keyPressed() {
       stopExperiment();
     }
   }
+  if (key == ESC) {
+    stopExperiment();
+    exit();
+  }
 }
 
 
